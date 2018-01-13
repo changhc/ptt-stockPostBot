@@ -22,16 +22,15 @@ from bs4 import BeautifulSoup
 import datetime
 
 def CreatePost():
-    content = ''
     url_gtsm = 'https://goodinfo.tw/StockInfo/ShowBearishChart.asp?STOCK_ID=%E6%AB%83%E8%B2%B7%E6%8C%87%E6%95%B8&CHT_CAT=DATE'
     url_credit_sum = 'https://goodinfo.tw/StockInfo/ShowBearishChart.asp?STOCK_ID=%E5%8A%A0%E6%AC%8A%E6%8C%87%E6%95%B8&CHT_CAT=DATE'
 
-    content += CrawlCreditTable()
+    title, content = CrawlCreditTable()
     content += CrawlGoodInfo(url_credit_sum)
     content += ('-' * 70 + '\r\n\r\n')
     content += '櫃買信用交易統計\r\n\r\n'
     content += CrawlGoodInfo(url_gtsm)
-    return content
+    return title, content
 
 def CrawlCreditTable():
     content = ''
@@ -46,7 +45,9 @@ def CrawlCreditTable():
         content += ('{i[0]: <10}{i[1]: <12}{i[2]: <12}{i[3]: <12}{i[4]: <13}{i[5]: <13}'.format(i=obj['creditList'][idx]) + '\r\n')
 
     content += '\r\n\r\n'
-    return content
+    yr = int(date[:4]) - 1911
+    title = '%d年%s月%s日信用交易統計\r\n' % (yr, date[4:6], date[6:])
+    return title, content
 
 def CrawlGoodInfo(url):
     content = ''
@@ -67,12 +68,12 @@ def ProcessSign(t, isSelling):
 
     text = chr(21) + '[1;'
     if '-' in t:
-        text += '32'
-        text += '%s%s%s' % (toks[0], t.replace('-', '減\t'), toks[1])
+        text += '32m'
+        text += '%s%s\t%s' % (toks[0], t.replace('-', '減\t'), toks[1])
     elif '+' in t:
-        text += '31'
-        text += '%s%s%s' % (toks[0], t.replace('+', '增\t'), toks[1])
-    text += 'm%s\r\n' % chr(3)
+        text += '31m'
+        text += '%s%s\t%s' % (toks[0], t.replace('+', '增\t'), toks[1])
+    text += '%s' % chr(3)
     return text
 
 def CheckLatency(hostName):
@@ -81,15 +82,15 @@ def CheckLatency(hostName):
     ping = subprocess.Popen(['ping', '-c', '10', hostName], stdout = subprocess.PIPE, stderr=subprocess.STDOUT)
     res, nothing = ping.communicate()
     res = re.match(".*([0-9]+)% .*\/([0-9.]+)\/[0-9.]+\/.*", res.decode('ascii'), flags = re.DOTALL)
-    delayCoeff = 18
+    delayCoeff = 15
     if res.group(1) != '0':
-        delayCoeff = 15
+        delayCoeff = 12
     delayUnit = float(res.group(2)) / delayCoeff
     print("Testing loss {0} %. Avg response time {1} ms.".format(res.group(1), res.group(2)))
     
 def ReadSettings():
     global userId, password, boardName
-    print('Hello! I\'m PttAutoPushBoo!')
+    print('Hello! I\'m PttStockPoster!')
     userId = input('Please enter your user ID: ')
     password = input('Please enter your password: ')
     boardName = input('Please enter the name of the board that the post belongs to: ')
@@ -104,10 +105,10 @@ def Login(hostName, userId ,password) :
         Exit(5)
         
     if u"請輸入代號" in content:
-        #print ("輸入帳號中...")
+        #print ('ID...')
         telnet.write((userId + "\r\n" ).encode('ascii'))
         time.sleep(delayUnit)
-        #print ("輸入密碼中...")
+        #print ('Pasword...')
         telnet.write((password + "\r\n").encode('ascii'))
         time.sleep(5 * delayUnit)
         content = telnet.read_very_eager().decode('big5','ignore')
@@ -125,7 +126,7 @@ def Login(hostName, userId ,password) :
            time.sleep(2 * delayUnit)
            content = telnet.read_very_eager().decode('big5','ignore')
         if u"請按任意鍵繼續" in content:
-           #print ("資訊頁面，按任意鍵繼續...")
+           print ('Skipping Info Page...')
            telnet.write(("\r\n" ).encode('ascii'))
            time.sleep(2 * delayUnit)
            content = telnet.read_very_eager().decode('big5','ignore')
@@ -140,49 +141,22 @@ def Login(hostName, userId ,password) :
            telnet.write(("q\r\n").encode('ascii'))
            time.sleep(5 * delayUnit)   
            content = telnet.read_very_eager().decode('big5','ignore')
-        #print ("--- 登入完成 ---")
+        telnet.write(('ddd').encode('ascii'))
+        time.sleep(delayUnit)
+        print ('--- Logged in ---')
         
     else:
         Exit(7)
 
 def Disconnect(error=False) :
-    #if(not error):
-    #    print ("登出中...")
+    if(not error):
+        print ('Logging out...')
     # q = 上一頁，直到回到首頁為止，g = 離開，再見
-    telnet.write(("qqqqqqqqqg\r\ny\r\n" ).encode('ascii'))
+    telnet.write(('qqqqqqqqqg\r\ny\r\n' ).encode('ascii'))
     time.sleep(3 * delayUnit)
-    #if(not error):
-    #    print ("--- 登出完成 ---")
+    if(not error):
+        print ('--- Logged out ---')
     telnet.close()
-
-def Push(boardName, postId, pushType, pushContent):
-    #print('--- 開始推文 ---')
-    GoToBoard(boardName)
-    #print('進入看板')
-    # go to post
-    telnet.write(('#').encode('ascii'))
-    time.sleep(delayUnit)
-    telnet.write((postId + '\r\n').encode('ascii'))
-    time.sleep(delayUnit)
-
-    content = telnet.read_very_eager().decode('big5','ignore')
-    if u"找不到這個文章代碼" in content:
-        Exit(2)
-    elif u"本文已刪除" in content:
-        Exit(3)
-    #print('找到文章')
-
-    # Shift-X
-    telnet.write(('X').encode('ascii'))
-    time.sleep(delayUnit)
-    telnet.write(str(pushType).encode('ascii'))
-    time.sleep(delayUnit)
-    telnet.write((pushContent +'\r\n').encode('big5'))
-    time.sleep(delayUnit)
-    telnet.write(('y').encode('ascii'))
-    time.sleep(delayUnit)
-    #print ("--- 推文成功 ---")
-
 
 def GoToBoard(boardName):
     # s 進入要發文的看板
@@ -190,7 +164,7 @@ def GoToBoard(boardName):
         Exit(1)
     telnet.write(('\r\n').encode('big5'))
     time.sleep(delayUnit)       
-    telnet.write(("dd").encode('ascii'))   # in case of welcoming message
+    telnet.write(('gg').encode('ascii'))   # in case of welcoming message
     time.sleep(2 * delayUnit)
 
 def CheckBoardExists(boardName):
@@ -217,6 +191,33 @@ def Exit(errorCode):
     Disconnect()
     sys.exit(-1)
 
+def Post(boardName):
+    title, content = CreatePost()
+    #print('--- 開始推文 ---')
+    GoToBoard(boardName)
+    print('Entered the board')
+    print('--- Start Posting --- ')
+    telnet.write(chr(16).encode('ascii'))
+    time.sleep(delayUnit)
+    telnet.write('6\r\n'.encode('ascii'))
+    time.sleep(delayUnit)
+    telnet.write(title.encode('big5'))
+    time.sleep(delayUnit)
+    telnet.write((chr(25) * 3).encode('ascii'))
+    time.sleep(delayUnit)
+
+    # Write Content
+    telnet.write(content.encode('big5'))
+    time.sleep(10 * delayUnit)
+    telnet.write(chr(24).encode('ascii'))
+    time.sleep(5 * delayUnit)
+    telnet.write('s\r\n'.encode('ascii'))
+    time.sleep(5 * delayUnit)
+    telnet.write('\r\n'.encode('ascii'))
+    time.sleep(10 * delayUnit)
+
+    print ("--- Done Posting ---")
+
 def main():
 
     ReadSettings()
@@ -224,11 +225,10 @@ def main():
     start = time.time()
     print("Initializing...")
     Login(hostName, userId ,password)
-    # post
+    Post(boardName)
     Disconnect()
     print("Successfully posted!")
     print("Total time: {0} sec.".format(time.time() - start))
 	
-#if __name__=="__main__" :
-#    main()
-
+if __name__=="__main__" :
+    main()
