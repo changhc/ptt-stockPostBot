@@ -1,4 +1,4 @@
-# ptt-stockPoster
+# ptt-stockPostBot
 A robot that can post the credit trading info automatically.
 * Inspired by [this repo](https://github.com/twtrubiks/PttAutoLoginPost).
 
