@@ -13,6 +13,7 @@ boardName = 'test'
 delayUnit = 0.5
 pushLength = 48
 pushContentList = []
+header = { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.108 Safari/537.36' }
 ###### GLOBAL VAR END ######
 
 import requests
@@ -20,13 +21,22 @@ import json
 from bs4 import BeautifulSoup
 import datetime
 
-def CrawlData():
+def CreatePost():
     content = ''
-    date = datetime.datetime.now().strftime('%Y%m%d')
     url_gtsm = 'https://goodinfo.tw/StockInfo/ShowBearishChart.asp?STOCK_ID=%E6%AB%83%E8%B2%B7%E6%8C%87%E6%95%B8&CHT_CAT=DATE'
     url_credit_sum = 'https://goodinfo.tw/StockInfo/ShowBearishChart.asp?STOCK_ID=%E5%8A%A0%E6%AC%8A%E6%8C%87%E6%95%B8&CHT_CAT=DATE'
+
+    content += CrawlCreditTable()
+    content += CrawlGoodInfo(url_credit_sum)
+    content += ('-' * 70 + '\r\n\r\n')
+    content += '櫃買信用交易統計\r\n\r\n'
+    content += CrawlGoodInfo(url_gtsm)
+    return content
+
+def CrawlCreditTable():
+    content = ''
+    date = datetime.datetime.now().strftime('%Y%m%d')
     url_credit = 'http://www.twse.com.tw/exchangeReport/MI_MARGN?response=json&date=' + '20180112' # date
-    header = { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.108 Safari/537.36' }
     text = requests.get(url_credit, headers=header).text
     obj = json.loads(text)
     content += (obj['creditTitle'] + '\r\n\r\n')
@@ -34,14 +44,36 @@ def CrawlData():
 #    content += ('\t'.join(obj['creditFields'][1:]) + '\r\n')
     for idx in range(len(obj['creditList'])):
         content += ('{i[0]: <10}{i[1]: <12}{i[2]: <12}{i[3]: <12}{i[4]: <13}{i[5]: <13}'.format(i=obj['creditList'][idx]) + '\r\n')
-    print(content)
-#soup = BeautifulSoup(text, 'html.parser')
-#print(soup.table.find_all('td'))
-    '''
+
+    content += '\r\n\r\n'
+    return content
+
+def CrawlGoodInfo(url):
+    content = ''
+    text = requests.get(url, headers=header).text
+    soup = BeautifulSoup(text, 'html.parser')
     tr = soup.find('tr', { 'id': 'row0'})
     tds = tr.find_all('td')
-    print(tds[8].text, tds[14].text)
-    '''
+
+    content += '%s\r\n' % ProcessSign(tds[8].text, False)
+    content += '%s\r\n\r\n' % ProcessSign(tds[14].text, True)
+    return content
+
+def ProcessSign(t, isSelling):
+    if isSelling:
+        toks = ['券', '張']
+    else:
+        toks = ['資', '億']
+
+    text = chr(21) + '[1;'
+    if '-' in t:
+        text += '32'
+        text += '%s%s%s' % (toks[0], t.replace('-', '減\t'), toks[1])
+    elif '+' in t:
+        text += '31'
+        text += '%s%s%s' % (toks[0], t.replace('+', '增\t'), toks[1])
+    text += 'm%s\r\n' % chr(3)
+    return text
 
 def CheckLatency(hostName):
     global delayUnit
