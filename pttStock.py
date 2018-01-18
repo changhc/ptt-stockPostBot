@@ -35,7 +35,7 @@ def CreatePost():
 def CrawlCreditTable():
     content = ''
     date = datetime.datetime.now().strftime('%Y%m%d')
-    url_credit = 'http://www.twse.com.tw/exchangeReport/MI_MARGN?response=json&date=' + '20180112' # date
+    url_credit = 'http://www.twse.com.tw/exchangeReport/MI_MARGN?response=json&date=' + date
     text = requests.get(url_credit, headers=header).text
     obj = json.loads(text)
     content += (obj['creditTitle'] + '\r\n\r\n')
