@@ -1,5 +1,9 @@
 #coding=utf-8
-import telnetlib, sys, time, os, subprocess, re
+import telnetlib, sys, re, subprocess, time
+import requests
+import json
+from bs4 import BeautifulSoup
+import datetime
 
 ###### CONSTANTS START ######
 hostName = 'ptt.cc'
@@ -16,20 +20,11 @@ pushContentList = []
 header = { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.108 Safari/537.36' }
 ###### GLOBAL VAR END ######
 
-import requests
-import json
-from bs4 import BeautifulSoup
-import datetime
-
 def CreatePost():
-    url_gtsm = 'https://goodinfo.tw/StockInfo/ShowBearishChart.asp?STOCK_ID=%E6%AB%83%E8%B2%B7%E6%8C%87%E6%95%B8&CHT_CAT=DATE'
-    url_credit_sum = 'https://goodinfo.tw/StockInfo/ShowBearishChart.asp?STOCK_ID=%E5%8A%A0%E6%AC%8A%E6%8C%87%E6%95%B8&CHT_CAT=DATE'
-
     title, content = CrawlCreditTable()
-    content += CrawlGoodInfo(url_credit_sum)
     content += ('-' * 70 + '\r\n\r\n')
     content += '櫃買信用交易統計\r\n\r\n'
-    content += CrawlGoodInfo(url_gtsm)
+    content += GetGTSM()
     return title, content
 
 def CrawlCreditTable():
@@ -45,22 +40,42 @@ def CrawlCreditTable():
         content += ('{i[0]: <10}{i[1]: <12}{i[2]: <12}{i[3]: <12}{i[4]: <13}{i[5]: <13}'.format(i=obj['creditList'][idx]) + '\r\n')
 
     content += '\r\n\r\n'
+    data = [
+        int(obj['creditList'][2][-1].replace(',', '')) - \
+            int(obj['creditList'][2][-2].replace(',', '')),
+        int(obj['creditList'][1][-1].replace(',', '')) - \
+            int(obj['creditList'][1][-2].replace(',', ''))
+    ]
+    data[0] = int(data[0] / 1000) / 100
+    content += '%s\r\n' % ProcessSign(data[0], False)
+    content += '%s\r\n\r\n' % ProcessSign(data[1], True)
+    
     yr = int(date[:4]) - 1911
     title = '%d年%s月%s日信用交易統計\r\n' % (yr, date[4:6], date[6:])
     return title, content
 
-def CrawlGoodInfo(url):
+def GetGTSM():
     content = ''
-    text = requests.get(url, headers=header).text
-    soup = BeautifulSoup(text, 'html.parser')
-    tr = soup.find('tr', { 'id': 'row0'})
-    tds = tr.find_all('td')
-    if tds[8].text == '' or tds[14].text == '':
-        print('Data Not Yet Published on GoodInfo!')
-        sys.exit(-1)
-    content += '%s\r\n' % ProcessSign(tds[8].text, False)
-    content += '%s\r\n\r\n' % ProcessSign(tds[14].text, True)
+    date = datetime.datetime.now()
+    data = CrawlGTSM(date)
+    data_prev = CrawlGTSM(date - datetime.timedelta(days=1))
+    data = [data[0] - data_prev[0], data[1] - data_prev[1]]
+    data[0] = int(data[0] / 1000) / 100
+    content += '%s\r\n' % ProcessSign(data[0], False)
+    content += '%s\r\n\r\n' % ProcessSign(data[1], True)
     return content
+
+def CrawlGTSM(date):
+    date_string = date.strftime('%m/%d')
+    url = 'http://www.tpex.org.tw/web/stock/margin_trading/margin_balance/margin_bal_result.php?d=%d/%s' % \
+            (date.year - 1911, date_string)
+    text = requests.get(url, headers=header).text
+    obj = json.loads(text)
+    data = [
+        int(obj['tfootData_two'][-1].replace(',', '')),
+        int(obj['tfootData_one'][-1].replace(',', ''))
+    ]
+    return data
 
 def ProcessSign(t, isSelling):
     if isSelling:
@@ -69,12 +84,16 @@ def ProcessSign(t, isSelling):
         toks = ['資', '億']
 
     text = chr(21) + '[1;'
-    if '-' in t:
+    if t < 0:
+        t *= -1
         text += '32m'
-        text += '%s%s\t%s' % (toks[0], t.replace('-', '減\t'), toks[1])
-    elif '+' in t:
-        text += '31m'
-        text += '%s%s\t%s' % (toks[0], t.replace('+', '增\t'), toks[1])
+        text += '%s減\t%s\t%s' % (toks[0], '{:,}'.format(t), toks[1])
+    else:
+        if t > 0:
+            text += '31m'
+        else:
+            text += '37m'
+        text += '%s增\t%s\t%s' % (toks[0], '{:,}'.format(t), toks[1])
     text += '%s' % chr(3)
     return text
 
