@@ -55,7 +55,9 @@ def CrawlGoodInfo(url):
     soup = BeautifulSoup(text, 'html.parser')
     tr = soup.find('tr', { 'id': 'row0'})
     tds = tr.find_all('td')
-
+    if tds[8].text == '' or tds[14].text == '':
+        print('Data Not Yet Published on GoodInfo!')
+        sys.exit(-1)
     content += '%s\r\n' % ProcessSign(tds[8].text, False)
     content += '%s\r\n\r\n' % ProcessSign(tds[14].text, True)
     return content
@@ -191,8 +193,7 @@ def Exit(errorCode):
     Disconnect()
     sys.exit(-1)
 
-def Post(boardName):
-    title, content = CreatePost()
+def Post(boardName, title, content):
     #print('--- 開始推文 ---')
     GoToBoard(boardName)
     print('Entered the board')
@@ -219,16 +220,16 @@ def Post(boardName):
     print ("--- Done Posting ---")
 
 def main():
-
+    title, content = CreatePost()
     ReadSettings()
     CheckLatency(hostName)
     start = time.time()
     print("Initializing...")
     Login(hostName, userId ,password)
-    Post(boardName)
+    Post(boardName, title, content)
     Disconnect()
     print("Successfully posted!")
     print("Total time: {0} sec.".format(time.time() - start))
-	
+
 if __name__=="__main__" :
     main()
